@@ -8,6 +8,8 @@ from pygame.math import Vector2 as vector
 from editor import Editor
 from level import Level
 
+from os import walk
+
 
 class Main:
     def __init__(self) -> None:
@@ -26,7 +28,39 @@ class Main:
         pygame.mouse.set_cursor(cursor)
 
     def imports(self):
+        # terrain
         self.land_tiles = import_folder_dict("PirateMaker/graphics/terrain/land")
+        self.water_bottom = load(
+            "PirateMaker/graphics/terrain/water/water_bottom.png"
+        ).convert_alpha()
+        self.water_top_animation = import_folder(
+            "PirateMaker/graphics/terrain/water/animation"
+        )
+
+        # coins
+        self.gold = import_folder("PirateMaker/graphics/items/gold")
+        self.silver = import_folder("PirateMaker/graphics/items/silver")
+        self.diamond = import_folder("PirateMaker/graphics/items/diamond")
+        self.particle = import_folder("PirateMaker/graphics/items/particle")
+
+        # palm trees
+        self.palms = {
+            folder: import_folder(f"PirateMaker/graphics/terrain/palm/{folder}")
+            for folder in list(walk("PirateMaker/graphics/terrain/palm"))[0][1]
+        }
+
+        # enemies
+        self.spikes = load(
+            "PirateMaker/graphics/enemies/spikes/spikes.png"
+        ).convert_alpha()
+        self.tooth = {
+            folder: import_folder(f"PirateMaker/graphics/enemies/tooth/{folder}")
+            for folder in list(walk("PirateMaker/graphics/enemies/tooth"))[0][1]
+        }
+        self.shell = {
+            folder: import_folder(f"PirateMaker/graphics/enemies/shell_left/{folder}")
+            for folder in list(walk("PirateMaker/graphics/enemies/shell_left"))[0][1]
+        }
 
     def toggle_editor(self):
         self.editor_active = not self.editor_active
@@ -34,7 +68,23 @@ class Main:
     def switch(self, grid=None):
         self.transition.active = True
         if grid:
-            self.level = Level(grid, self.switch, {"land": self.land_tiles})
+            self.level = Level(
+                grid,
+                self.switch,
+                {
+                    "land": self.land_tiles,
+                    "water bottom": self.water_bottom,
+                    "water top": self.water_top_animation,
+                    "gold": self.gold,
+                    "silver": self.silver,
+                    "diamond": self.diamond,
+                    "particle": self.particle,
+                    "palms": self.palms,
+                    "spikes": self.spikes,
+                    "tooth": self.tooth,
+                    "shell": self.shell,
+                },
+            )
 
     def run(self, frame_rate):
         while True:
