@@ -9,6 +9,9 @@ from settings import *
 from support import *
 
 from menu import Menu
+from timer import Timer
+
+from random import choice, randint
 
 
 class Editor:
@@ -20,6 +23,13 @@ class Editor:
         # imports
         self.land_tiles = land_tiles
         self.imports()
+
+        # clouds
+        self.current_clouds = []
+        self.cloud_surf = import_folder("PirateMaker/graphics/clouds")
+        self.cloud_timer = pygame.USEREVENT + 1
+        pygame.time.set_timer(self.cloud_timer, 2000)
+        self.startup_clouds()
 
         # navagation
         self.origin = vector()
@@ -37,6 +47,29 @@ class Editor:
 
         # menu
         self.menu = Menu()
+
+        # objects
+        self.canvas_objects = pygame.sprite.Group()
+        self.object_drag_active = False
+        self.object_timer = Timer(400)
+
+        # player
+        CanvasObject(
+            pos=(200, WINDOW_HEIGHT / 2),
+            frames=self.animations[0]["frames"],
+            tile_id=0,
+            origin=self.origin,
+            group=self.canvas_objects,
+        )
+
+        # sky
+        self.sky_handle = CanvasObject(
+            pos=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2),
+            frames=[self.sky_handle_surf],
+            tile_id=1,
+            origin=self.origin,
+            group=self.canvas_objects,
+        )
 
     # support
     def get_current_cell(self):
@@ -82,7 +115,12 @@ class Editor:
                             self.canvas_data[cell].terrain_neighbors.append(name)
 
     def imports(self):
-        self.water_bottom = load("PirateMaker/graphics/terrain/water/water_bottom.png")
+        self.water_bottom = load(
+            "PirateMaker/graphics/terrain/water/water_bottom.png"
+        ).convert_alpha()
+        self.sky_handle_surf = load(
+            "PirateMaker/graphics/cursors/handle.png"
+        ).convert_alpha()
 
         # animations
         self.animations = {}
@@ -95,11 +133,23 @@ class Editor:
                     "length": len(graphics),
                 }
 
+        # preview
+        self.preview_surfs = {
+            key: load(value["preview"])
+            for key, value in EDITOR_DATA.items()
+            if value["preview"]
+        }
+
     def animation_update(self, dt):
         for value in self.animations.values():
             value["frame index"] += ANIMATION_SPEED * dt / 1000
             if value["frame index"] >= value["length"]:
                 value["frame index"] = 0
+
+    def mouse_on_object(self):
+        for sprite in self.canvas_objects:
+            if sprite.rect.collidepoint(mouse_pos()):
+                return sprite
 
     # input
     def event_loop(self):
@@ -112,8 +162,12 @@ class Editor:
             self.selection_hotkeys(event)
             self.menu_click(event)
 
+            self.object_drag(event)
+
             self.canvas_add()
             self.canvas_remove()
+
+            self.create_clouds(event)
 
     def pan_input(self, event):
         # middle mouse button pressed / released
@@ -135,6 +189,9 @@ class Editor:
         if self.pan_active:
             self.origin = vector(mouse_pos()) - self.pan_offset
 
+            for sprite in self.canvas_objects:
+                sprite.pan_pos(self.origin)
+
     def selection_hotkeys(self, event):
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_RIGHT:
@@ -151,20 +208,46 @@ class Editor:
             self.selection_index = self.menu.click(mouse_pos(), mouse_buttons())
 
     def canvas_add(self):
-        if mouse_buttons()[0] and not self.menu.rect.collidepoint(mouse_pos()):
+        if (
+            mouse_buttons()[0]
+            and not self.menu.rect.collidepoint(mouse_pos())
+            and not self.object_drag_active
+        ):
             current_cell = self.get_current_cell()
+            if EDITOR_DATA[self.selection_index]["type"] == "tile":
+                if current_cell != self.last_selected_cell:
+                    if current_cell in self.canvas_data:  # xdreamEdit
+                        self.canvas_data[current_cell].add_id(self.selection_index)
+                    else:
+                        self.canvas_data[current_cell] = CanvasTile(
+                            self.selection_index
+                        )
 
-            if current_cell != self.last_selected_cell:
-                if current_cell in self.canvas_data:  # xdreamEdit
-                    self.canvas_data[current_cell].add_id(self.selection_index)
-                else:
-                    self.canvas_data[current_cell] = CanvasTile(self.selection_index)
-
-                self.check_neighbors(current_cell)
-                self.last_selected_cell = current_cell
+                    self.check_neighbors(current_cell)
+                    self.last_selected_cell = current_cell
+            else:  # object
+                if not self.object_timer.active:
+                    CanvasObject(
+                        pos=mouse_pos(),
+                        frames=self.animations[self.selection_index]["frames"],
+                        tile_id=self.selection_index,
+                        origin=self.origin,
+                        group=self.canvas_objects,
+                    )
+                    self.object_timer.activate()
 
     def canvas_remove(self):
         if mouse_buttons()[2] and not self.menu.rect.collidepoint(mouse_pos()):
+            # delete object
+            selected_object = self.mouse_on_object()
+            if selected_object:
+                if EDITOR_DATA[selected_object.tile_id]["style"] not in (
+                    "player",
+                    "sky",
+                ):
+                    selected_object.kill()
+
+            # delete tiles
             if self.canvas_data:
                 current_cell = self.get_current_cell()
                 if current_cell in self.canvas_data:
@@ -173,6 +256,19 @@ class Editor:
                     if self.canvas_data[current_cell].is_empty:
                         del self.canvas_data[current_cell]
                 self.check_neighbors(current_cell)
+
+    def object_drag(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and mouse_buttons()[0]:
+            for sprite in self.canvas_objects:
+                if sprite.rect.collidepoint(event.pos):
+                    sprite.start_drag()
+                    self.object_drag_active = True
+
+        if event.type == pygame.MOUSEBUTTONUP and self.object_drag_active:
+            for sprite in self.canvas_objects:
+                if sprite.selected:
+                    sprite.end_drag(self.origin)
+                    self.object_drag_active = False
 
     # drawing
     def draw_tile_lines(self):
@@ -241,6 +337,135 @@ class Editor:
                     midbottom=(pos[0] + TILE_SIZE // 2, pos[1] + TILE_SIZE)
                 )
                 self.display_surface.blit(surf, rect)
+        self.canvas_objects.draw(self.display_surface)
+
+    def preview(self):
+        selected_object = self.mouse_on_object()
+        if not self.menu.rect.collidepoint(mouse_pos()):
+            if selected_object:
+                rect = selected_object.rect.inflate(10, 10)
+                color = "black"
+                width = 3
+                size = 15
+
+                pygame.draw.lines(
+                    self.display_surface,
+                    color,
+                    False,
+                    (
+                        (rect.left, rect.top + size),
+                        rect.topleft,
+                        (rect.left + size, rect.top),
+                    ),
+                    width,
+                )
+                pygame.draw.lines(
+                    self.display_surface,
+                    color,
+                    False,
+                    (
+                        (rect.right - size, rect.top),
+                        rect.topright,
+                        (rect.right, rect.top + size),
+                    ),
+                    width,
+                )
+                pygame.draw.lines(
+                    self.display_surface,
+                    color,
+                    False,
+                    (
+                        (rect.right, rect.bottom - size),
+                        rect.bottomright,
+                        (rect.right - size, rect.bottom),
+                    ),
+                    width,
+                )
+                pygame.draw.lines(
+                    self.display_surface,
+                    color,
+                    False,
+                    (
+                        (rect.left, rect.bottom - size),
+                        rect.bottomleft,
+                        (rect.left + size, rect.bottom),
+                    ),
+                    width,
+                )
+            else:
+                type_dict = {key: value["type"] for key, value in EDITOR_DATA.items()}
+                surf = self.preview_surfs[self.selection_index].copy()
+                surf.set_alpha(200)
+                # tile
+                if type_dict[self.selection_index] == "tile":
+                    current_cell = self.get_current_cell()
+                    rect = surf.get_rect(
+                        topleft=self.origin + vector(current_cell) * TILE_SIZE
+                    )
+                else:
+                    # object
+                    rect = surf.get_rect(center=mouse_pos())
+
+                self.display_surface.blit(surf, rect)
+
+    def display_sky(self, dt):
+        self.display_surface.fill(SKY_COLOR)
+        y = self.sky_handle.rect.centery
+
+        # horizon lines
+        if y > 0:
+            horizon_rect1 = pygame.Rect(0, y - 10, WINDOW_WIDTH, 10)
+            horizon_rect2 = pygame.Rect(0, y - 16, WINDOW_WIDTH, 4)
+            horizon_rect3 = pygame.Rect(0, y - 20, WINDOW_WIDTH, 2)
+            pygame.draw.rect(self.display_surface, HORIZON_TOP_COLOR, horizon_rect1)
+            pygame.draw.rect(self.display_surface, HORIZON_TOP_COLOR, horizon_rect2)
+            pygame.draw.rect(self.display_surface, HORIZON_TOP_COLOR, horizon_rect3)
+
+            self.display_clouds(dt, y)
+
+        # sea
+        if 0 < y < WINDOW_HEIGHT:
+            sea_rect = pygame.Rect(0, y, WINDOW_WIDTH, WINDOW_HEIGHT)
+            pygame.draw.rect(self.display_surface, SEA_COLOR, sea_rect)
+            pygame.draw.line(
+                self.display_surface, HORIZON_COLOR, (0, y), (WINDOW_WIDTH, y), 3
+            )
+        if y < 0:
+            self.display_surface.fill(SEA_COLOR)
+
+    def display_clouds(self, dt, horizon_y):
+        for cloud in self.current_clouds:
+            cloud["pos"][0] -= cloud["speed"] * dt / 1000
+            x = cloud["pos"][0]
+            y = horizon_y - cloud["pos"][1]
+            self.display_surface.blit(cloud["surf"], (x, y))
+
+    def create_clouds(self, event):
+        if event.type == self.cloud_timer:
+            surf = choice(self.cloud_surf)
+            surf = pygame.transform.scale2x(surf) if randint(0, 4) < 2 else surf
+
+            pos = [WINDOW_WIDTH + randint(50, 100), randint(0, WINDOW_HEIGHT)]
+            self.current_clouds.append(
+                {"surf": surf, "pos": pos, "speed": randint(20, 50)}
+            )
+
+            # remove clouds
+            self.current_clouds = [
+                cloud for cloud in self.current_clouds if cloud["pos"][0] > -400
+            ]
+
+    def startup_clouds(self):
+        for i in range(20):
+            surf = (
+                pygame.transform.scale2x(choice(self.cloud_surf))
+                if randint(0, 4) < 2
+                else choice(self.cloud_surf)
+            )
+            pos = [randint(0, WINDOW_WIDTH), randint(0, WINDOW_HEIGHT)]
+            self.current_clouds.append(
+                {"surf": surf, "pos": pos, "speed": randint(20, 50)}
+            )
 
     # update
     def run(self, dt):
@@ -248,12 +473,16 @@ class Editor:
 
         # updating
         self.animation_update(dt)
+        self.canvas_objects.update(dt)
+        self.object_timer.update()
 
         # drawing
         self.display_surface.fill("gray")
+        self.display_sky(dt)
         self.draw_level()
         self.draw_tile_lines()
-        pygame.draw.circle(self.display_surface, "red", self.origin, 10)
+        # pygame.draw.circle(self.display_surface, "red", self.origin, 10)
+        self.preview()
         self.menu.display(self.selection_index)
 
 
@@ -312,3 +541,48 @@ class CanvasTile:
             and not self.enemy
         ):
             self.is_empty = True
+
+
+class CanvasObject(pygame.sprite.Sprite):
+    def __init__(self, pos, frames, tile_id, origin, group) -> None:
+        super().__init__(group)
+        self.tile_id = tile_id
+
+        # animation
+        self.frames = frames
+        self.frame_index = 0
+
+        self.image = self.frames[self.frame_index]
+        self.rect = self.image.get_rect(center=pos)
+
+        # movement
+        self.distance_to_origin = vector(self.rect.topleft) - origin
+        self.selected = False
+        self.mouse_offset = vector()
+
+    def start_drag(self):
+        self.selected = True
+        self.mouse_offset = vector(mouse_pos()) - vector(self.rect.topleft)
+
+    def drag(self):
+        if self.selected:
+            self.rect.topleft = mouse_pos() - self.mouse_offset
+
+    def end_drag(self, origin):
+        self.selected = False
+        self.distance_to_origin = vector(self.rect.topleft) - origin
+
+    def animate(self, dt):
+        self.frame_index += ANIMATION_SPEED * dt / 1000
+        self.frame_index = (
+            0 if self.frame_index >= len(self.frames) else self.frame_index
+        )
+        self.image = self.frames[int(self.frame_index)]
+        self.rect = self.image.get_rect(midbottom=self.rect.midbottom)
+
+    def pan_pos(self, origin):
+        self.rect.topleft = origin + self.distance_to_origin
+
+    def update(self, dt):
+        self.animate(dt)
+        self.drag()
