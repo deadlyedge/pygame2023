@@ -62,6 +62,12 @@ class Main:
             for folder in list(walk("PirateMaker/graphics/enemies/shell_left"))[0][1]
         }
 
+        # player
+        self.player_graphics = {
+            folder: import_folder(f"PirateMaker/graphics/player/{folder}")
+            for folder in list(walk("PirateMaker/graphics/player"))[0][1]
+        }
+
     def toggle_editor(self):
         self.editor_active = not self.editor_active
 
@@ -83,6 +89,7 @@ class Main:
                     "spikes": self.spikes,
                     "tooth": self.tooth,
                     "shell": self.shell,
+                    'player': self.player_graphics
                 },
             )
 

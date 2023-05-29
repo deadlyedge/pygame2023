@@ -5,7 +5,17 @@ from pygame.math import Vector2 as vector
 from settings import *
 from support import *
 
-from sprites import Generic, Animated, Particle, Coin, Player, Spikes, Tooth, Shell
+from sprites import (
+    Generic,
+    Block,
+    Animated,
+    Particle,
+    Coin,
+    Player,
+    Spikes,
+    Tooth,
+    Shell,
+)
 
 
 class Level:
@@ -14,9 +24,10 @@ class Level:
         self.switch = switch
 
         # groups
-        self.all_sprites = pygame.sprite.Group()
+        self.all_sprites = CamaraGroup()
         self.coin_sprites = pygame.sprite.Group()
         self.damage_sprites = pygame.sprite.Group()
+        self.collision_sprites = pygame.sprite.Group()
 
         self.build_level(grid, asset_dict)
 
@@ -27,18 +38,37 @@ class Level:
         for layer_name, layer in grid.items():
             for pos, data in layer.items():
                 if layer_name == "terrain":
-                    Generic(pos, asset_dict["land"][data], self.all_sprites)
+                    Generic(
+                        pos,
+                        asset_dict["land"][data],
+                        [self.all_sprites, self.collision_sprites],
+                    )
                 if layer_name == "water":
                     if data == "top":
                         # animated sprite
-                        Animated(asset_dict["water top"], pos, self.all_sprites)
+                        Animated(
+                            asset_dict["water top"],
+                            pos,
+                            self.all_sprites,
+                            LEVEL_LAYERS["water"],
+                        )
                     else:
-                        Generic(pos, asset_dict["water bottom"], self.all_sprites)
+                        Generic(
+                            pos,
+                            asset_dict["water bottom"],
+                            self.all_sprites,
+                            LEVEL_LAYERS["water"],
+                        )
 
                 match data:
                     # player
                     case 0:
-                        self.player = Player(pos, self.all_sprites)
+                        self.player = Player(
+                            pos,
+                            asset_dict["player"],
+                            self.all_sprites,
+                            self.collision_sprites,
+                        )
 
                     # coins
                     case 4:
@@ -77,27 +107,66 @@ class Level:
                             [self.all_sprites, self.damage_sprites],
                         )
                     case 9:
-                        Shell("left", asset_dict["shell"], pos, self.all_sprites)
+                        Shell(
+                            "left",
+                            asset_dict["shell"],
+                            pos,
+                            [self.all_sprites, self.collision_sprites],
+                        )
                     case 10:
-                        Shell("right", asset_dict["shell"], pos, self.all_sprites)
+                        Shell(
+                            "right",
+                            asset_dict["shell"],
+                            pos,
+                            [self.all_sprites, self.collision_sprites],
+                        )
 
                     # palm trees
                     case 11:
                         Animated(asset_dict["palms"]["small_fg"], pos, self.all_sprites)
+                        Block(pos, (78, 50), self.collision_sprites)
                     case 12:
                         Animated(asset_dict["palms"]["large_fg"], pos, self.all_sprites)
+                        Block(pos, (78, 50), self.collision_sprites)
                     case 13:
                         Animated(asset_dict["palms"]["left_fg"], pos, self.all_sprites)
+                        Block(pos, (78, 50), self.collision_sprites)
                     case 14:
                         Animated(asset_dict["palms"]["right_fg"], pos, self.all_sprites)
+                        Block(
+                            pos + vector(50, 0),
+                            (78, 50),
+                            self.collision_sprites,
+                        )
+
                     case 15:
-                        Animated(asset_dict["palms"]["small_bg"], pos, self.all_sprites)
+                        Animated(
+                            asset_dict["palms"]["small_bg"],
+                            pos,
+                            self.all_sprites,
+                            LEVEL_LAYERS["bg"],
+                        )
                     case 16:
-                        Animated(asset_dict["palms"]["large_bg"], pos, self.all_sprites)
+                        Animated(
+                            asset_dict["palms"]["large_bg"],
+                            pos,
+                            self.all_sprites,
+                            LEVEL_LAYERS["bg"],
+                        )
                     case 17:
-                        Animated(asset_dict["palms"]["left_bg"], pos, self.all_sprites)
+                        Animated(
+                            asset_dict["palms"]["left_bg"],
+                            pos,
+                            self.all_sprites,
+                            LEVEL_LAYERS["bg"],
+                        )
                     case 18:
-                        Animated(asset_dict["palms"]["right_bg"], pos, self.all_sprites)
+                        Animated(
+                            asset_dict["palms"]["right_bg"],
+                            pos,
+                            self.all_sprites,
+                            LEVEL_LAYERS["bg"],
+                        )
 
     def get_coins(self):
         collided_coins = pygame.sprite.spritecollide(
@@ -117,9 +186,28 @@ class Level:
     def run(self, dt):
         # update
         self.event_loop()
-        self.display_surface.fill(SKY_COLOR)
+        self.all_sprites.update(dt)
         self.get_coins()
 
         # drawing
-        self.all_sprites.update(dt)
-        self.all_sprites.draw(self.display_surface)
+        self.display_surface.fill(SKY_COLOR)
+        self.all_sprites.custom_draw(self.player)
+        # pygame.draw.rect(self.display_surface, "yellow", self.player.hitbox)
+
+
+class CamaraGroup(pygame.sprite.Group):
+    def __init__(self) -> None:
+        super().__init__()
+        self.display_surface = pygame.display.get_surface()
+        self.offset = vector()
+
+    def custom_draw(self, player):
+        self.offset.x = player.rect.centerx - WINDOW_WIDTH / 2
+        self.offset.y = player.rect.centery - WINDOW_HEIGHT / 2
+
+        for sprite in self:
+            for layer in LEVEL_LAYERS.values():
+                if sprite.z == layer:
+                    offset_rect = sprite.rect.copy()
+                    offset_rect.center -= self.offset
+                    self.display_surface.blit(sprite.image, offset_rect)

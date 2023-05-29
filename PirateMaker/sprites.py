@@ -5,18 +5,25 @@ from settings import *
 
 
 class Generic(pygame.sprite.Sprite):
-    def __init__(self, pos, surf, group) -> None:
+    def __init__(self, pos, surf, group, z=LEVEL_LAYERS["main"]) -> None:
         super().__init__(group)
         self.image = surf
         self.rect = self.image.get_rect(topleft=pos)
+        self.z = z
+
+
+class Block(Generic):
+    def __init__(self, pos, size, group) -> None:
+        surf = pygame.Surface(size)
+        super().__init__(pos, surf, group)
 
 
 # simple animated objects
 class Animated(Generic):
-    def __init__(self, assets, pos, group) -> None:
+    def __init__(self, assets, pos, group, z=LEVEL_LAYERS["main"]) -> None:
         self.animation_frames = assets
         self.frame_index = 0
-        super().__init__(pos, self.animation_frames[self.frame_index], group)
+        super().__init__(pos, self.animation_frames[self.frame_index], group, z)
 
     def animate(self, dt):
         self.frame_index += ANIMATION_SPEED * dt / 1000
@@ -85,28 +92,120 @@ class Shell(Generic):
 
 
 class Player(Generic):
-    def __init__(self, pos, group) -> None:
-        super().__init__(pos, pygame.Surface((32, 64)), group)
-        self.image.fill("red")
+    def __init__(self, pos, assets, group, collision_sprites) -> None:
+        # animation
+        self.animation_frames = assets
+        self.frame_index = 0
+        self.status = "idle"
+        self.orientation = "right"
+        surf = self.animation_frames[f"{self.status}_{self.orientation}"][
+            self.frame_index
+        ]
+        super().__init__(pos, surf, group)
 
         # movement
         self.direction = vector()
-        self.pos = vector(self.rect.topleft)
+        self.pos = vector(self.rect.center)
         self.speed = 300
+        self.gravity = 4
+        self.on_floor = False
+
+        # collision
+        self.collision_sprites = collision_sprites
+        self.hitbox = self.rect.inflate(-50, 0)
+
+    def get_status(self):
+        if self.direction.y < 0:
+            self.status = "jump"
+        elif self.direction.y > 1:
+            self.status = "fall"
+        else:
+            self.status = "run" if self.direction.x != 0 else "idle"
+
+    def animate(self, dt):
+        current_animation = self.animation_frames[f"{self.status}_{self.orientation}"]
+        self.frame_index += ANIMATION_SPEED * dt / 1000
+        self.frame_index = (
+            0 if self.frame_index >= len(current_animation) else self.frame_index
+        )
+        self.image = current_animation[int(self.frame_index)]
 
     def input(self):
         keys = pygame.key.get_pressed()
         if keys[pygame.K_RIGHT]:
             self.direction.x = 1
+            self.orientation = "right"
         elif keys[pygame.K_LEFT]:
             self.direction.x = -1
+            self.orientation = "left"
         else:
             self.direction.x = 0
 
+        # for test only
+        # if keys[pygame.K_DOWN]:
+        #     self.direction.y = 1
+        # elif keys[pygame.K_UP]:
+        #     self.direction.y = -1
+        # else:
+        #     self.direction.y = 0
+
+        if keys[pygame.K_SPACE] and self.on_floor:
+            self.direction.y = -2
+
     def move(self, dt):
-        self.pos += self.direction * self.speed * dt / 1000
-        self.rect.topleft = (round(self.pos.x), round(self.pos.y))
+        # horizontal movement
+        self.pos.x += self.direction.x * self.speed * dt / 1000
+        self.hitbox.centerx = round(self.pos.x)
+        self.rect.centerx = self.hitbox.centerx
+        self.collision("horizontal")
+
+        # vertical movement
+        self.pos.y += self.direction.y * self.speed * dt / 1000
+        self.hitbox.centery = round(self.pos.y)
+        self.rect.centery = self.hitbox.centery
+        self.collision("vertical")
+
+    def apply_gravity(self, dt):
+        self.direction.y += self.gravity * dt / 1000
+        self.rect.y = self.direction.y
+
+    def check_on_floor(self):
+        floor_rect = pygame.Rect(self.hitbox.bottomleft, (self.hitbox.width, 2))
+        floor_sprites = [
+            sprite
+            for sprite in self.collision_sprites
+            if sprite.rect.colliderect(floor_rect)
+        ]
+        self.on_floor = True if floor_sprites else False
+
+    def collision(self, direction):
+        for sprite in self.collision_sprites:
+            if sprite.rect.colliderect(self.hitbox):
+                if direction == "horizontal":
+                    if self.direction.x > 0:
+                        self.hitbox.right = sprite.rect.left
+                    if self.direction.x < 0:
+                        self.hitbox.left = sprite.rect.right
+                    self.rect.centerx = self.hitbox.centerx
+                    self.pos.x = self.hitbox.centerx
+                else:
+                    self.hitbox.top = (
+                        sprite.rect.bottom if self.direction.y < 0 else self.hitbox.top
+                    )
+                    self.hitbox.bottom = (
+                        sprite.rect.top if self.direction.y > 0 else self.hitbox.bottom
+                    )
+                    self.rect.centery, self.pos.y = (
+                        self.hitbox.centery,
+                        self.hitbox.centery,
+                    )
+                    self.direction.y = 0
 
     def update(self, dt):
         self.input()
+        self.apply_gravity(dt)
         self.move(dt)
+        self.check_on_floor()
+
+        self.get_status()
+        self.animate(dt)
