@@ -61,6 +61,9 @@ class Main:
             folder: import_folder(f"PirateMaker/graphics/enemies/shell_left/{folder}")
             for folder in list(walk("PirateMaker/graphics/enemies/shell_left"))[0][1]
         }
+        self.pearl = load(
+            "PirateMaker/graphics/enemies/pearl/pearl.png"
+        ).convert_alpha()
 
         # player
         self.player_graphics = {
@@ -89,13 +92,14 @@ class Main:
                     "spikes": self.spikes,
                     "tooth": self.tooth,
                     "shell": self.shell,
-                    'player': self.player_graphics
+                    "player": self.player_graphics,
+                    "pearl": self.pearl,
                 },
             )
 
     def run(self, frame_rate):
         while True:
-            dt = self.clock.tick(frame_rate)
+            dt = self.clock.tick(frame_rate) / 1000
 
             if self.editor_active:
                 self.editor.run(dt)
@@ -119,7 +123,7 @@ class Transition:
 
     def display(self, dt):
         if self.active:
-            self.border_width += dt * self.direction
+            self.border_width += dt * self.direction * 1000
             if self.border_width >= self.threshold:
                 self.direction = -1
                 self.toggle()

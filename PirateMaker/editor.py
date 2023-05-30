@@ -149,7 +149,7 @@ class Editor:
 
     def animation_update(self, dt):
         for value in self.animations.values():
-            value["frame index"] += ANIMATION_SPEED * dt / 1000
+            value["frame index"] += ANIMATION_SPEED * dt
             if value["frame index"] >= value["length"]:
                 value["frame index"] = 0
 
@@ -516,7 +516,7 @@ class Editor:
 
     def display_clouds(self, dt, horizon_y):
         for cloud in self.current_clouds:
-            cloud["pos"][0] -= cloud["speed"] * dt / 1000
+            cloud["pos"][0] -= cloud["speed"] * dt
             x = cloud["pos"][0]
             y = horizon_y - cloud["pos"][1]
             self.display_surface.blit(cloud["surf"], (x, y))
@@ -663,7 +663,7 @@ class CanvasObject(pygame.sprite.Sprite):
         self.distance_to_origin = vector(self.rect.topleft) - origin
 
     def animate(self, dt):
-        self.frame_index += ANIMATION_SPEED * dt / 1000
+        self.frame_index += ANIMATION_SPEED * dt
         self.frame_index = (
             0 if self.frame_index >= len(self.frames) else self.frame_index
         )
