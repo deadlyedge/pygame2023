@@ -1,1 +1,1 @@
-this learning project is with pygame ~~2.4~~2.3 and python 3.11
+this learning project is with pygame ~~2.4~~ 2.3 and python 3.11
