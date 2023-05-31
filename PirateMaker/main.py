@@ -74,8 +74,18 @@ class Main:
         # clouds
         self.clouds = import_folder("PirateMaker/graphics/clouds")
 
+        # sounds
+        self.level_sounds = {
+            "coin": pygame.mixer.Sound("PirateMaker/audio/coin.wav"),
+            "hit": pygame.mixer.Sound("PirateMaker/audio/hit.wav"),
+            "jump": pygame.mixer.Sound("PirateMaker/audio/jump.wav"),
+            "music": pygame.mixer.Sound("PirateMaker/audio/SuperHero.ogg"),
+        }
+
     def toggle_editor(self):
         self.editor_active = not self.editor_active
+        if self.editor_active:
+            self.editor.editor_music.play()
 
     def switch(self, grid=None):
         self.transition.active = True
@@ -99,6 +109,7 @@ class Main:
                     "pearl": self.pearl,
                     "clouds": self.clouds,
                 },
+                self.level_sounds,
             )
 
     def run(self, frame_rate):
